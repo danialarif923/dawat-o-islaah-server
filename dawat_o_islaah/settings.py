@@ -28,9 +28,9 @@ AUTH_USER_MODEL = 'user_management.User'
 SECRET_KEY = 'django-insecure-h32=@f68u)ui-1r(f_5u*p5!a-al7airl#rtav0s3^b(k1$96o'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['*', ".vercel.app"]
 
 CORS_ORIGIN_ALLOW_ALL = True
 
@@ -120,6 +120,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
 
 ROOT_URLCONF = 'dawat_o_islaah.urls'
@@ -225,3 +226,4 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 CKEDITOR_UPLOAD_PATH = "uploads/"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"

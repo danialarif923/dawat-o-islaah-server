@@ -1,0 +1,14 @@
+{
+  "builds": [
+    {
+      "src": "dawat-o-islaah-server-main/wsgi.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dawat-o-islaah-server-main/wsgi.py"
+    }
+  ]
+}
