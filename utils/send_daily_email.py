@@ -60,11 +60,13 @@ Here is your Daily Islamic Reminder.
 
 📖 Quran Verse:
 {verse['arabic']}
+{verse['urdu']}
 {verse['english']}
 Reference: {verse['reference']}
 
 🕌 Hadith of the Day:
 {hadith['arabic']}
+{hadith['urdu']}
 {hadith['english']}
 Reference: {hadith['reference']}
 
