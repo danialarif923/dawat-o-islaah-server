@@ -358,9 +358,9 @@ class HadithDocumentUploadAdmin(admin.ModelAdmin):
 
         doc.add_paragraph()
         doc.add_heading('Hadiths', level=2)
-        headers = ['Hadith Number', 'Hadith Arabic', 'Hadith Urdu', 'Hadith English',
+        headers = ['Hadith Number', 'Baab English', 'Baab Urdu', 'Hadith Arabic', 'Hadith Urdu', 'Hadith English',
                    'Reference', 'Status', 'Detailed Explanation']
-        tbl2 = doc.add_table(rows=2, cols=7, style='Table Grid')
+        tbl2 = doc.add_table(rows=2, cols=9, style='Table Grid')
         tbl2.alignment = WD_TABLE_ALIGNMENT.LEFT
         for j, h_text in enumerate(headers):
             cell = tbl2.rows[0].cells[j]
@@ -369,12 +369,12 @@ class HadithDocumentUploadAdmin(admin.ModelAdmin):
                 for r in p.runs:
                     r.bold = True
                     r.font.size = Pt(9)
-        for j in range(7):
+        for j in range(9):
             tbl2.rows[1].cells[j].text = ''
             for p in tbl2.rows[1].cells[j].paragraphs:
                 for r in p.runs:
                     r.font.size = Pt(8)
-        widths = [Cm(2), Cm(5.5), Cm(4.5), Cm(5.5), Cm(3), Cm(1.8), Cm(5)]
+        widths = [Cm(1.8), Cm(2.8), Cm(2.8), Cm(5), Cm(3.8), Cm(5), Cm(2.5), Cm(1.5), Cm(4.5)]
         for row in tbl2.rows:
             for j, w in enumerate(widths):
                 row.cells[j].width = w
@@ -514,6 +514,10 @@ class HadithDocumentUploadAdmin(admin.ModelAdmin):
                     col_map['status'] = h
                 elif hl in ('detailed explanation', 'explanation', 'detail'):
                     col_map['explanation'] = h
+                elif hl in ('baab english', 'baab name english', 'baab_english'):
+                    col_map['baab_english'] = h
+                elif hl in ('baab urdu', 'baab name urdu', 'baab_urdu'):
+                    col_map['baab_urdu'] = h
 
             if 'number' not in col_map:
                 return (
@@ -556,7 +560,7 @@ class HadithDocumentUploadAdmin(admin.ModelAdmin):
             rows = parsed['rows']
             col_map = parsed['col_map']
 
-            Chapter.objects.get_or_create(
+            chapter_obj, _ = Chapter.objects.get_or_create(
                 book=book,
                 chapter_number=chapter_number,
                 defaults={
@@ -569,12 +573,76 @@ class HadithDocumentUploadAdmin(admin.ModelAdmin):
             updated_count = 0
             created_count = 0
 
+            # ---- Group rows by baab and create/link Baab records ----
+            from collections import OrderedDict
+            baab_groups = OrderedDict()
+            for row_data in rows:
+                be = row_data.get(col_map.get('baab_english', ''), '').strip()
+                bu = row_data.get(col_map.get('baab_urdu', ''), '').strip()
+                key = (be, bu)
+                if key not in baab_groups:
+                    baab_groups[key] = []
+                baab_groups[key].append(row_data)
+
+            baab_map = {}
+            for (be, bu), group_rows in baab_groups.items():
+                if not be and not bu:
+                    continue
+                baab_name_urdu = bu or be
+                baab_name_english = be or bu
+                hadith_nos = []
+                for rd in group_rows:
+                    try:
+                        hadith_nos.append(int(rd.get(col_map['number'], '').strip()))
+                    except (ValueError, TypeError):
+                        pass
+                if not hadith_nos:
+                    continue
+                start_h = min(hadith_nos)
+                end_h = max(hadith_nos)
+                baab_obj, baab_created = Baab.objects.get_or_create(
+                    book=book,
+                    baab_name_urdu=baab_name_urdu,
+                    defaults={
+                        'baab_name_english': baab_name_english,
+                        'chapter': chapter_obj,
+                        'chapter_english': chapter_english or '',
+                        'start_hadith_number': start_h,
+                        'end_hadith_number': end_h,
+                    }
+                )
+                if not baab_created:
+                    changed_baab = False
+                    if baab_obj.start_hadith_number > start_h:
+                        baab_obj.start_hadith_number = start_h
+                        changed_baab = True
+                    if baab_obj.end_hadith_number < end_h:
+                        baab_obj.end_hadith_number = end_h
+                        changed_baab = True
+                    if baab_obj.baab_name_english != baab_name_english:
+                        baab_obj.baab_name_english = baab_name_english
+                        changed_baab = True
+                    if baab_obj.chapter_id != chapter_obj.id:
+                        baab_obj.chapter = chapter_obj
+                        changed_baab = True
+                    if baab_obj.chapter_english != (chapter_english or ''):
+                        baab_obj.chapter_english = chapter_english or ''
+                        changed_baab = True
+                    if changed_baab:
+                        baab_obj.save()
+                baab_map[(be, bu)] = baab_obj
+
             with transaction.atomic():
                 for row_data in rows:
                     try:
                         hadith_no = int(row_data.get(col_map['number'], '').strip())
                     except (ValueError, TypeError):
                         continue
+
+                    # Find baab for this row
+                    be = row_data.get(col_map.get('baab_english', ''), '').strip()
+                    bu = row_data.get(col_map.get('baab_urdu', ''), '').strip()
+                    baab_obj = baab_map.get((be, bu))
 
                     defaults = {
                         'chapter_hadith_id': hadith_no,
@@ -588,6 +656,7 @@ class HadithDocumentUploadAdmin(admin.ModelAdmin):
                         'reference': row_data.get(col_map.get('reference', ''), ''),
                         'status': row_data.get(col_map.get('status', ''), ''),
                         'detailed_explanation': row_data.get(col_map.get('explanation', ''), ''),
+                        'baab': baab_obj,
                         'updated_by': request.user,
                     }
 
