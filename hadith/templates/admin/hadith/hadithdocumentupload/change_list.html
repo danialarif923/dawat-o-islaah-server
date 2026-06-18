@@ -1,4 +1,5 @@
 {% extends "admin/change_list.html" %}
+
 {% block object-tools-items %}
     <li>
         <a href="download-template/" class="addlink" style="background: #28a745; padding: 8px 12px; border-radius: 4px; margin-right: 8px;">
@@ -6,4 +7,123 @@
         </a>
     </li>
     {{ block.super }}
+{% endblock %}
+
+{% block content %}
+{% if request.user.is_superuser %}
+<div id="doc-history-bar" style="margin-bottom:18px;padding:14px 16px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <strong style="font-size:13px;">Re-apply a previous upload:</strong>
+    <select id="doc-history-dropdown" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;min-width:280px;font-size:13px;">
+        <option value="">Loading documents...</option>
+    </select>
+    <button id="doc-update-btn" style="display:none;background:#ffc107;color:#000;border:none;padding:7px 16px;border-radius:4px;cursor:pointer;font-weight:600;font-size:13px;">Update</button>
+    <button id="doc-cancel-btn" style="display:none;background:#6c757d;color:#fff;border:none;padding:7px 16px;border-radius:4px;cursor:pointer;font-size:13px;">Cancel</button>
+    <span id="doc-status" style="font-size:12px;color:#666;"></span>
+</div>
+{% endif %}
+{{ block.super }}
+{% endblock %}
+
+{% block footer %}
+{{ block.super }}
+{% if request.user.is_superuser %}
+<script>
+(function() {
+    var dropdown = document.getElementById('doc-history-dropdown');
+    var updateBtn = document.getElementById('doc-update-btn');
+    var cancelBtn = document.getElementById('doc-cancel-btn');
+    var statusEl = document.getElementById('doc-status');
+    var docs = [];
+    var latestId = null;
+    var selectedId = null;
+
+    function fetchDocs() {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', 'list-documents/', true);
+        xhr.onload = function() {
+            if (xhr.status === 200) {
+                docs = JSON.parse(xhr.responseText);
+                renderDropdown();
+            }
+        };
+        xhr.send();
+    }
+
+    function renderDropdown() {
+        dropdown.innerHTML = '';
+        if (docs.length === 0) {
+            dropdown.innerHTML = '<option value="">No documents uploaded</option>';
+            return;
+        }
+        latestId = docs[0].id;
+        selectedId = latestId;
+        docs.forEach(function(doc) {
+            var opt = document.createElement('option');
+            opt.value = doc.id;
+            opt.textContent = doc.name;
+            dropdown.appendChild(opt);
+        });
+        dropdown.value = latestId;
+        updateBtn.style.display = 'none';
+        cancelBtn.style.display = 'none';
+        statusEl.textContent = '';
+    }
+
+    dropdown.addEventListener('change', function() {
+        var val = parseInt(dropdown.value);
+        if (val === latestId) {
+            updateBtn.style.display = 'none';
+            cancelBtn.style.display = 'none';
+            statusEl.textContent = '';
+        } else {
+            updateBtn.style.display = 'inline-block';
+            cancelBtn.style.display = 'inline-block';
+            statusEl.textContent = 'Selected: ' + (docs.find(function(d) { return d.id === val; }) || {}).name;
+        }
+        selectedId = val;
+    });
+
+    cancelBtn.addEventListener('click', function() {
+        dropdown.value = latestId;
+        updateBtn.style.display = 'none';
+        cancelBtn.style.display = 'none';
+        statusEl.textContent = '';
+        selectedId = latestId;
+    });
+
+    updateBtn.addEventListener('click', function() {
+        if (!selectedId || selectedId === latestId) return;
+        updateBtn.disabled = true;
+        cancelBtn.disabled = true;
+        statusEl.textContent = 'Processing...';
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', 'reprocess/' + selectedId + '/', true);
+        xhr.setRequestHeader('X-CSRFToken', '{{ csrf_token }}');
+        xhr.onload = function() {
+            updateBtn.disabled = false;
+            cancelBtn.disabled = false;
+            if (xhr.status === 200) {
+                var resp = JSON.parse(xhr.responseText);
+                if (resp.success) {
+                    statusEl.textContent = 'Update successful! Page will reload...';
+                    setTimeout(function() { location.reload(); }, 1500);
+                } else {
+                    statusEl.textContent = 'Error: ' + (resp.error || 'Unknown error');
+                }
+            } else {
+                statusEl.textContent = 'Server error: ' + xhr.status;
+            }
+        };
+        xhr.onerror = function() {
+            updateBtn.disabled = false;
+            cancelBtn.disabled = false;
+            statusEl.textContent = 'Network error';
+        };
+        xhr.send();
+    });
+
+    fetchDocs();
+})();
+</script>
+{% endif %}
 {% endblock %}

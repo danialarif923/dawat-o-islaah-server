@@ -118,7 +118,6 @@ class HadithDocumentUpload(models.Model):
         verbose_name_plural = "Upload Word Document"
 
     def __str__(self):
-        name = self.file.name.split('/')[-1] if self.file.name else "unknown"
         if self.uploaded_at:
-            return f"{name} ({self.uploaded_at.strftime('%Y-%m-%d %H:%M')})"
-        return f"{name} (pending)" 
+            return f"Upload {self.uploaded_at.strftime('%Y-%m-%d %H:%M')}"
+        return "Upload (pending)"
