@@ -8,7 +8,6 @@ class CustomUserManager(BaseUserManager):
             raise ValueError(_('The Email must be set'))
         email = self.normalize_email(email)
 
-        # ✅ ensure default value if not provided
         extra_fields.setdefault('receive_daily_email', True)
 
         user = self.model(email=email, **extra_fields)
@@ -21,7 +20,7 @@ class CustomUserManager(BaseUserManager):
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('is_active', True)
         extra_fields.setdefault('role', 'admin')
-        extra_fields.setdefault('receive_daily_email', True)  # ✅ NEW
+        extra_fields.setdefault('receive_daily_email', True)
 
         if extra_fields.get('is_staff') is not True:
             raise ValueError(_('Superuser must have is_staff=True.'))
@@ -49,8 +48,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     timezone = models.CharField(max_length=50, default='UTC')
     last_email_sent_date = models.DateField(null=True, blank=True)
 
-    # ✅ NEW FIELD
     receive_daily_email = models.BooleanField(default=True)
+
+    current_verse_surah = models.IntegerField(default=1)
+    current_verse_ayah = models.IntegerField(default=1)
+    current_hadith_book = models.ForeignKey('hadith.Book', null=True, blank=True, on_delete=models.SET_NULL)
+    current_hadith_number = models.IntegerField(default=0)
 
     objects = CustomUserManager()
 
