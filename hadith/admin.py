@@ -298,8 +298,8 @@ class HadithAdmin(admin.ModelAdmin):
 
 @admin.register(HadithDocumentUpload)
 class HadithDocumentUploadAdmin(admin.ModelAdmin):
-    readonly_fields = ('result_log', 'uploaded_at')
-    list_display = ('__str__', 'uploaded_at', 'result_summary')
+    readonly_fields = ('result_log', 'uploaded_at', 'updated_by')
+    list_display = ('__str__', 'uploaded_at', 'updated_by', 'result_summary')
     change_list_template = 'admin/hadith/hadithdocumentupload/change_list.html'
 
     fieldsets = (
@@ -351,6 +351,8 @@ class HadithDocumentUploadAdmin(admin.ModelAdmin):
             }, status=400)
         if isinstance(parsed, str):
             return JsonResponse({'error': parsed}, status=400)
+        doc.updated_by = request.user
+        doc.save(update_fields=['updated_by'])
         self.process_document(request, doc, parsed)
         return JsonResponse({'success': True, 'result': doc.result_log})
 
@@ -419,6 +421,7 @@ class HadithDocumentUploadAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         is_new = not obj.pk
+        obj.updated_by = request.user
         if is_new:
             parsed = self._parse_upload_document(obj.file)
             if parsed is None:

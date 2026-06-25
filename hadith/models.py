@@ -112,6 +112,13 @@ class HadithDocumentUpload(models.Model):
     )
     result_log = models.TextField(blank=True, editable=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="updated_hadith_documents"
+    )
 
     class Meta:
         verbose_name = "Upload Word Document"
