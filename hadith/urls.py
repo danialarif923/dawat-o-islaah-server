@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .views import fetch_hadith_from_api, get_hadith, get_had_chapters, get_books
+from .views import fetch_hadith_from_api, get_hadith, get_had_chapters, get_books, search_hadith
 
 urlpatterns = [
 
@@ -18,5 +18,6 @@ urlpatterns = [
     ),
     path("get-chapters/", get_had_chapters, name="get_had_chapters"),
     path('api/get-chapters/', views.get_chapters_by_book, name='get_chapters_by_book'),
-    path('api/chapters-for-book/', views.chapters_for_book, name='chapters_for_book'),
+    path('search-hadith/', search_hadith, name='search_hadith'),
+    
 ]

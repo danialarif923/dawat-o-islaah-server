@@ -1,53 +1,96 @@
-# hadith/views.py
-# FULL UPDATED FILE (copy-paste)
-
-from .models import Hadith, Book, Chapter, Baab
+from .models import Hadith, Book
 from django.http import JsonResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+import requests
 from django.core.paginator import Paginator
+from django.db.models import Q, Count
 
 
-def chapters_for_book(request):
-    book_id = request.GET.get("book_id")
-    if not book_id:
-        return JsonResponse([], safe=False)
-    chapters = Chapter.objects.filter(book_id=book_id).order_by("chapter_number")
-    data = [{"id": c.id, "text": str(c)} for c in chapters]
-    return JsonResponse(data, safe=False)
+@api_view(['GET'])
+def fetch_hadith_from_api(request):
+    book_name = request.GET.get("book")
+    if not book_name:
+        return Response({"error": "Book name is required"}, status=400)
 
+    API_KEY = "$2y$10$d4nL2E660zHHBrwTB7Bviu3WvW5sToLRBWFbJ1yhn7rJzSuNpA0S"
+    normalized_name = book_name.replace("-", " ").title()
 
-def get_chapters_by_book(request):
-    book_id = request.GET.get("book_id")
-    if not book_id:
-        return JsonResponse([], safe=False)
+    book_obj, _ = Book.objects.get_or_create(
+        name=normalized_name,
+        defaults={"order": 0}
+    )
 
-    try:
-        chapters = (
-            Hadith.objects.filter(book_id=book_id)
-            .exclude(chapter_english__isnull=True)
-            .exclude(chapter_english="")
-            .order_by("chapter_number")
-            .values_list("chapter_english", flat=True)
-            .distinct()
-        )
-        return JsonResponse(list(chapters), safe=False)
-    except (ValueError, TypeError) as e:
-        return JsonResponse({"error": str(e)}, status=400)
+    created_count = 0
+    page = 1
+
+    while True:
+        try:
+            response = requests.get(
+                "https://hadithapi.com/api/hadiths",
+                params={"apiKey": API_KEY, "book": book_name, "page": page},
+                timeout=30
+            )
+            data = response.json()
+        except Exception:
+            break
+
+        hadiths_data = data.get("hadiths", {}).get("data", [])
+        if not hadiths_data:
+            break
+
+        for h_data in hadiths_data:
+            chapter_data = h_data.get("chapter", {})
+
+            if isinstance(chapter_data, dict):
+                chapter_english = chapter_data.get("chapterEnglish", "General")
+                chapter_arabic = chapter_data.get("chapterArabic", "")
+            else:
+                chapter_english = chapter_data or "General"
+                chapter_arabic = ""
+
+            try:
+                hadith_number = int(h_data.get("hadithNumber") or 0)
+            except:
+                continue
+
+            _, created = Hadith.objects.get_or_create(
+                book=book_obj,
+                hadith_number=hadith_number,
+                defaults={
+                    "chapter_english": chapter_english,
+                    "chapter_arabic": chapter_arabic,
+                    "arabic_text": h_data.get("hadithArabic"),
+                    "english_text": h_data.get("hadithEnglish"),
+                    "reference": str(h_data.get("id") or ""),
+                }
+            )
+
+            if created:
+                created_count += 1
+
+        page += 1
+
+    return Response({"message": f"{created_count} hadiths added successfully."})
 
 
 URDU_TRANSLATION_MAP = {
-    "sunan-abu-dawood": "سنن ابو داؤد",
-    "abu-dawood": "سنن ابو داؤد",
-    "sahih-bukhari": "صحیح بخاری",
-    "sahih-muslim": "صحیح مسلم",
-    "al-tirmidhi": "جامع ترمذی",
-    "tirmidhi": "جامع ترمذی",
-    "sunan-nasai": "سنن نسائی",
-    "sunan-ibn-e-majah": "سنن ابن ماجہ",
-    "ibn-e-majah": "سنن ابن ماجہ",
-    "mishkat-al-masabih": "مشکاۃ المصابیح",
-    "mishkat": "مشکاۃ المصابیح",
+    "sunan-abu-dawood": "╪│┘å┘å ╪º╪¿┘ê ╪»╪º╪ñ╪»",
+    "abu-dawood": "╪│┘å┘å ╪º╪¿┘ê ╪»╪º╪ñ╪»",
+    "sahih-bukhari": "╪╡╪¡█î╪¡ ╪¿╪«╪º╪▒█î",
+    "sahih-muslim": "╪╡╪¡█î╪¡ ┘à╪│┘ä┘à",
+    "al-tirmidhi": "╪¼╪º┘à╪╣ ╪¬╪▒┘à╪░█î",
+    "tirmidhi": "╪¼╪º┘à╪╣ ╪¬╪▒┘à╪░█î",
+    "sunan-nasai": "╪│┘å┘å ┘å╪│╪º╪ª█î",
+    "sunan-ibn-e-majah": "╪│┘å┘å ╪º╪¿┘å ┘à╪º╪¼█ü",
+    "ibn-e-majah": "╪│┘å┘å ╪º╪¿┘å ┘à╪º╪¼█ü",
+    "mishkat-al-masabih": "┘à╪┤┌⌐╪º█â ╪º┘ä┘à╪╡╪º╪¿█î╪¡",
+    "mishkat": "┘à╪┤┌⌐╪º█â ╪º┘ä┘à╪╡╪º╪¿█î╪¡",
+    "musnad-ahmad": "┘à╪│┘å╪» ╪º╪¡┘à╪»",
+    "sunan-darimi": "╪│┘å┘å ╪»╪º╪▒┘à█î",
+    "muwatta-malik": "┘à┘ê╪╖╪º ┘à╪º┘ä┌⌐",
+    "mustadrak-al-hakim": "┘à╪│╪¬╪»╪▒┌⌐ ╪¡╪º┌⌐┘à",
+    "sahih-ibn-khuzaymah": "╪╡╪¡█î╪¡ ╪º╪¿┘å ╪«╪▓█î┘à█ü",
 }
 
 DB_BOOK_NAME_MAP = {
@@ -99,6 +142,11 @@ def get_books(request):
         "ibn-e-majah": {"writer": "Imam Ibn Majah", "death": "273 AH"},
         "sunan-nasai": {"writer": "Imam Nasai", "death": "303 AH"},
         "mishkat": {"writer": "Al-Baghawi", "death": "516 AH"},
+        "musnad-ahmad": {"writer": "Imam Ahmad", "death": "241 AH"},
+        "sunan-darimi": {"writer": "Imam Darimi", "death": "255 AH"},
+        "muwatta-malik": {"writer": "Imam Malik", "death": "179 AH"},
+        "mustadrak-al-hakim": {"writer": "Imam Hakim", "death": "405 AH"},
+        "sahih-ibn-khuzaymah": {"writer": "Ibn Khuzaymah", "death": "311 AH"},
     }
 
     books = Book.objects.all().order_by("order")
@@ -109,7 +157,7 @@ def get_books(request):
         info = WRITER_DATA.get(slug, {"writer": "Unknown", "death": "Unknown"})
 
         chapters_count = (
-            b.hadiths.values("chapter_number")
+            b.hadiths.values("chapter_english")
             .distinct()
             .count()
         )
@@ -126,142 +174,227 @@ def get_books(request):
     return Response({"status": 200, "books": data})
 
 
-# ==========================================================
-# CHAPTERS API
-# FIXED:
-# 1. chapter 0 now appears
-# 2. global numbering supported
-# ==========================================================
-@api_view(["GET"])
+def get_chapters_by_book(request):
+    book_id = request.GET.get("book_id")
+    if not book_id:
+        return JsonResponse([], safe=False)
+
+    try:
+        chapters = (
+            Hadith.objects.filter(book_id=book_id)
+            .exclude(chapter_english__isnull=True)
+            .exclude(chapter_english="")
+            .values_list("chapter_english", flat=True)
+            .distinct()
+        )
+        return JsonResponse(list(chapters), safe=False)
+    except (ValueError, TypeError) as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+
+@api_view(['GET'])
 def get_had_chapters(request):
     book_slug = request.GET.get("book")
-    book_obj = _resolve_book(book_slug)
+    name_variant = book_slug.replace("-", " ")
+
+    book_obj = Book.objects.filter(
+        Q(name__iexact=book_slug) | Q(name__iexact=name_variant)
+    ).first()
 
     if not book_obj:
         return Response({"status": 404, "error": "Book not found"}, status=404)
 
-    hadiths = (
-        Hadith.objects.filter(book=book_obj)
-        .order_by("chapter_number", "hadith_number")
-    )
+    hadiths = Hadith.objects.filter(book=book_obj).order_by("hadith_number")
 
     seen = set()
-    chapters = []
+    chapters_list = []
+    index = 0
 
     for h in hadiths:
-        if h.chapter_number not in seen:
-            seen.add(h.chapter_number)
+        key = (h.chapter_english, h.chapter_arabic)
 
-            has_real_urdu = any(ord(c) > 127 for c in (h.chapter_urdu or ""))
+        if key not in seen:
+            seen.add(key)
 
-            chapters.append({
-                "id": h.chapter_number,
+            chapters_list.append({
+                "id": index,
                 "bookSlug": book_slug,
-                "chapterNumber": h.chapter_number,
+                "chapterNumber": index,
                 "chapterEnglish": h.chapter_english,
                 "chapterArabic": h.chapter_arabic or "",
-                "chapterUrdu": h.chapter_urdu if has_real_urdu else None,
+                "chapterUrdu": ""
             })
 
-    return Response({"status": 200, "chapters": chapters})
+            index += 1
+
+    return Response({"status": 200, "chapters": chapters_list})
 
 
-# ==========================================================
-# HADITH API
-# FIXED:
-# GLOBAL NUMBERING
-# ==========================================================
-@api_view(["GET"])
+# Γ£à HADITH API (WITH SEARCH NAVIGATION SUPPORT)
+@api_view(['GET'])
 def get_hadith(request):
     book_slug = request.GET.get("book")
     chapter_no = request.GET.get("chapter")
     page = request.GET.get("page", 1)
-    hadith_no = request.GET.get("hadith")
+    hadith_number_param = request.GET.get("hadith")
 
     book_obj = _resolve_book(book_slug)
 
     if not book_obj:
         return Response({"status": 404, "error": "Book not found"}, status=404)
 
-    # Fetch all baabs for this book to match by number range
-    book_baabs = list(Baab.objects.filter(book=book_obj).order_by("start_hadith_number"))
+    # Build ordered chapter list for index mapping
+    all_hadiths = Hadith.objects.filter(book=book_obj).order_by("hadith_number")
+    seen = []
+    chapter_index_map = {}
+    for hh in all_hadiths:
+        if hh.chapter_english not in seen:
+            seen.append(hh.chapter_english)
+            chapter_index_map[hh.chapter_english] = len(seen) - 1
 
-    def find_baab(hadith_number):
-        for baab in book_baabs:
-            if baab.start_hadith_number <= hadith_number <= baab.end_hadith_number:
-                return baab
-        return None
+    # =========================================================
+    # FIND HADITH BY NUMBER OR FETCH LIST
+    # =========================================================
+    if hadith_number_param:
+        try:
+            target_hadith = Hadith.objects.get(
+                book=book_obj,
+                hadith_number=int(hadith_number_param)
+            )
 
-    queryset = (
-        Hadith.objects.filter(book=book_obj)
-        .select_related("book")
-        .order_by("hadith_number")   # GLOBAL ORDER
-    )
+            chapter_index = chapter_index_map.get(target_hadith.chapter_english, 0)
 
-    if chapter_no is not None and str(chapter_no).isdigit():
-        queryset = queryset.filter(chapter_number=int(chapter_no))
+            return Response({
+                "status": 200,
+                "chapterNumber": chapter_index,
+                "hadiths": {
+                    "data": [{
+                        "hadithNumber": target_hadith.hadith_number,
+                        "hadithArabic": target_hadith.arabic_text,
+                        "hadithEnglish": target_hadith.english_text,
+                        "hadithUrdu": target_hadith.urdu_text or "",
+                        "reference": target_hadith.reference,
+                        "status": "Sahih",
+                        "bookSlug": book_slug,
+                        "chapter": {
+                            "chapterNumber": chapter_index,
+                            "chapterEnglish": target_hadith.chapter_english,
+                            "chapterArabic": target_hadith.chapter_arabic
+                        },
+                        "headingEnglish": "",
+                        "headingArabic": "",
+                        "headingUrdu": ""
+                    }],
+                    "last_page": 1
+                }
+            })
 
-    if hadith_no is not None and str(hadith_no).isdigit():
-        queryset = queryset.filter(hadith_number=int(hadith_no))
-        paginator = Paginator(queryset, 1)
-    else:
-        paginator = Paginator(queryset, 20)
+        except Hadith.DoesNotExist:
+            return Response(
+                {"status": 404, "error": "Hadith not found"},
+                status=404
+            )
+
+    # =========================================================
+    # NORMAL FLOW (FETCH HADITH LIST)
+    # =========================================================
+    hadith_queryset = Hadith.objects.filter(book=book_obj).order_by("hadith_number")
+
+    if chapter_no is not None:
+        try:
+            chapter_index = int(chapter_no)
+            chapter_name = seen[chapter_index]
+        except:
+            chapter_name = None
+
+        if chapter_name:
+            hadith_queryset = hadith_queryset.filter(
+                chapter_english=chapter_name
+            )
+
+    paginator = Paginator(hadith_queryset, 20)
     page_obj = paginator.get_page(page)
 
     hadith_data = []
-
     for h in page_obj:
-        baab = h.baab if h.baab_id else find_baab(h.hadith_number)
-
         hadith_data.append({
-            # GLOBAL NUMBERING
             "hadithNumber": h.hadith_number,
-
             "hadithArabic": h.arabic_text,
             "hadithEnglish": h.english_text,
-            "hadithUrdu": h.urdu_text,
+            "hadithUrdu": h.urdu_text or "",
             "reference": h.reference,
-            "status": h.status,
-            "detailedExplanation": h.detailed_explanation,
-
+            "status": "Sahih",
             "bookSlug": book_slug,
-            "bookNameEnglish": h.book.name,
-            "bookNameUrdu": URDU_TRANSLATION_MAP.get(book_slug, h.book.name),
-
-            "baab": {
-                "nameUrdu": baab.baab_name_urdu if baab else None,
-                "nameEnglish": baab.baab_name_english if baab else None,
-            } if baab else None,
-
             "chapter": {
-                "chapterNumber": h.chapter_number,
+                "chapterNumber": chapter_index_map.get(h.chapter_english, 0),
                 "chapterEnglish": h.chapter_english,
-                "chapterArabic": h.chapter_arabic,
-                "chapterUrdu": h.chapter_urdu or h.chapter_english,
+                "chapterArabic": h.chapter_arabic
             },
+            "headingEnglish": "",
+            "headingArabic": "",
+            "headingUrdu": ""
         })
 
     return Response({
         "status": 200,
         "hadiths": {
             "data": hadith_data,
-            "last_page": paginator.num_pages,
-        },
+            "last_page": paginator.num_pages
+        }
     })
 
 
-@api_view(["GET"])
-def fetch_hadith_from_api(request):
-    book_slug = request.GET.get("book")
+@api_view(['GET'])
+def search_hadith(request):
+    q = request.GET.get('q', '').strip()
+    book_slug = request.GET.get('book', '').strip()
+    grade = request.GET.get('grade', '').strip()
+    page = request.GET.get('page', 1)
 
-    if not book_slug:
-        return Response({"error": "Required"}, status=400)
+    if not q:
+        return Response({'results': [], 'total': 0, 'page': 1, 'per_page': 20, 'total_pages': 0, 'book_counts': {}})
 
-    normalized_name = DB_BOOK_NAME_MAP.get(
-        book_slug,
-        book_slug.replace("-", " ").title()
-    )
+    query = Q(arabic_text__icontains=q) | Q(english_text__icontains=q) | Q(urdu_text__icontains=q)
 
-    Book.objects.get_or_create(name=normalized_name)
+    if book_slug:
+        book_obj = _resolve_book(book_slug)
+        if book_obj:
+            query &= Q(book=book_obj)
 
-    return Response({"message": "Running in background"})
+    if grade:
+        query &= Q(status__iexact=grade)
+
+    queryset = Hadith.objects.filter(query).order_by('book__order', 'hadith_number')
+
+    book_counts = {}
+    for entry in queryset.values('book__name').annotate(count=Count('id')).order_by():
+        slug = entry['book__name'].lower().replace(' ', '-')
+        book_counts[slug] = entry['count']
+
+    limited = queryset
+
+    results = []
+    for h in limited:
+        results.append({
+            'hadithNumber': h.hadith_number,
+            'hadithArabic': h.arabic_text,
+            'hadithEnglish': h.english_text,
+            'hadithUrdu': h.urdu_text or '',
+            'reference': h.reference,
+            'grade': h.status or '',
+            'book': {
+                'bookSlug': h.book.name.lower().replace(' ', '-'),
+                'bookName': h.book.name,
+            },
+            'chapter': {
+                'chapterNumber': h.chapter_number,
+                'chapterEnglish': h.chapter_english,
+                'chapterArabic': h.chapter_arabic or '',
+            },
+        })
+
+    return Response({
+        'results': results,
+        'total': len(results),
+        'book_counts': book_counts,
+    })
