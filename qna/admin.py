@@ -1,16 +1,49 @@
-# qna/admin.py
 from django.contrib import admin
+from django import forms
+from django.contrib.auth import get_user_model
 from .models import Question, Answer, Category, Bookmark
+
+User = get_user_model()
+
+class QuestionAdminForm(forms.ModelForm):
+    class Meta:
+        model = Question
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        mufti_qs = User.objects.filter(role='mufti')
+        self.fields['updated_by_user'].queryset = mufti_qs
+        self.fields['updated_by_user'].empty_label = '--- Select Mufti ---'
+        self.fields['updated_by_user'].required = False
+        self.fields['updated_by_manual'].required = False
+        self.fields['updated_by_manual'].widget.attrs['placeholder'] = 'Or enter mufti name manually'
+
+class AnswerAdminForm(forms.ModelForm):
+    class Meta:
+        model = Answer
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        mufti_qs = User.objects.filter(role='mufti')
+        self.fields['updated_by_user'].queryset = mufti_qs
+        self.fields['updated_by_user'].empty_label = '--- Select Mufti ---'
+        self.fields['updated_by_user'].required = False
+        self.fields['updated_by_manual'].required = False
+        self.fields['updated_by_manual'].widget.attrs['placeholder'] = 'Or enter mufti name manually'
 
 class AnswerInline(admin.StackedInline):
     model = Answer
+    form = AnswerAdminForm
     extra = 0
-    fields = ('content', 'approval_status')
+    fields = ('content', 'approval_status', ('updated_by_user', 'updated_by_manual'))
 
     def get_readonly_fields(self, request, obj=None):
-        if request.user.is_superuser:
-            return ('created_at', 'updated_at')
-        return ('approval_status', 'created_at', 'updated_at')
+        readonly = ('created_at', 'updated_at')
+        if not request.user.is_superuser:
+            readonly = readonly + ('approval_status',)
+        return readonly
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -20,21 +53,31 @@ class AnswerInline(admin.StackedInline):
 
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
+    form = QuestionAdminForm
     list_display = ('title', 'user', 'status', 'view_count', 'is_most_read', 'get_approval_status', 'created_at')
     list_filter = ('status', 'is_most_read', 'created_at')
     search_fields = ('title', 'content', 'user__email')
     inlines = [AnswerInline]
-    readonly_fields = ('created_at', 'updated_at')
+    fieldsets = [
+        (None, {
+            'fields': ('title', ('user', 'category'), 'content', 'status')
+        }),
+        ('Updated By', {
+            'fields': (('updated_by_user', 'updated_by_manual'),),
+            'classes': ('wide',),
+        }),
+        ('Stats', {
+            'fields': ('view_count', 'download_count', 'is_most_read'),
+            'classes': ('wide',),
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+        }),
+    ]
+    readonly_fields = ('user', 'created_at', 'updated_at')
 
-    def get_readonly_fields(self, request, obj=None):
-        if obj:
-            return ('user', 'created_at', 'updated_at')
-        return ('created_at', 'updated_at')
-
-    def save_model(self, request, obj, form, change):
-        if not obj.pk:
-            obj.user = request.user
-        super().save_model(request, obj, form, change)
+    class Media:
+        js = ("js/ckeditor_font_loader.js",)
 
     def get_approval_status(self, obj):
         from django.core.exceptions import ObjectDoesNotExist
@@ -79,11 +122,31 @@ class QuestionAdmin(admin.ModelAdmin):
 
 @admin.register(Answer)
 class AnswerAdmin(admin.ModelAdmin):
-    list_display = ('question', 'mufti', 'approval_status', 'created_at')
+    form = AnswerAdminForm
+    list_display = ('question', 'mufti', 'approval_status', 'get_updated_by', 'created_at')
     list_filter = ('approval_status', 'created_at')
     search_fields = ('content', 'question__title')
+    fieldsets = [
+        (None, {
+            'fields': ('question', 'mufti', 'content', 'approval_status')
+        }),
+        ('Updated By', {
+            'fields': (('updated_by_user', 'updated_by_manual'),),
+            'classes': ('wide',),
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+        }),
+    ]
     readonly_fields = ('mufti', 'question', 'created_at', 'updated_at')
     actions = ['approve_answers', 'reject_answers']
+
+    class Media:
+        js = ("js/ckeditor_font_loader.js",)
+
+    def get_updated_by(self, obj):
+        return obj.updated_by
+    get_updated_by.short_description = 'Updated By'
 
     def get_queryset(self, request):
         qs = super().get_queryset(request).select_related('question', 'mufti')
@@ -106,6 +169,7 @@ class AnswerAdmin(admin.ModelAdmin):
             answer.question.save()
         queryset.update(approval_status='rejected')
         self.message_user(request, f'{queryset.count()} answers rejected.')
+
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):

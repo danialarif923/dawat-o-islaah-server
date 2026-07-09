@@ -22,19 +22,19 @@ class PublicQuestionListAPI(generics.ListAPIView):
         qs = Question.objects.filter(status='approved').filter(
             Q(answer__isnull=True) | Q(answer__approval_status='approved')
         ).select_related('user', 'answer', 'answer__mufti', 'category')
-        
+
         # Filter by category
         category_slug = self.request.query_params.get('category')
         if category_slug:
             qs = qs.filter(category__slug=category_slug)
-            
+
         # Filter by saved (requires auth)
         saved_only = self.request.query_params.get('saved')
         if saved_only == 'true' and self.request.user.is_authenticated:
             qs = qs.filter(bookmarked_by__user=self.request.user)
-            
+
         return qs
-        
+
     def get_serializer_context(self):
         # Pass request to serializer to determine 'is_saved' status
         context = super().get_serializer_context()
@@ -50,7 +50,7 @@ class ToggleBookmarkAPI(APIView):
             question = Question.objects.get(pk=pk)
         except Question.DoesNotExist:
             return Response({"error": "Question not found"}, status=status.HTTP_404_NOT_FOUND)
-            
+
         bookmark, created = Bookmark.objects.get_or_create(user=request.user, question=question)
         if not created:
             bookmark.delete()
@@ -70,7 +70,7 @@ class UserQuestionListAPI(generics.ListAPIView):
 
     def get_queryset(self):
         return Question.objects.filter(user=self.request.user).select_related('user', 'answer', 'answer__mufti')
-        
+
 class UserQuestionDetailAPI(generics.RetrieveAPIView):
     serializer_class = QuestionSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -120,6 +120,10 @@ class CreateAnswerAPI(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
+        # Only admin and mufti roles can answer
+        if request.user.role not in ('admin', 'mufti'):
+            return Response({"error": "Only muftis and admins can answer questions"}, status=403)
+
         try:
             question = Question.objects.get(pk=pk)
         except Question.DoesNotExist:

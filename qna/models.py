@@ -32,10 +32,18 @@ class Question(models.Model):
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
 
-    # NEW FIELDS
     view_count = models.PositiveIntegerField(default=0)
     download_count = models.PositiveIntegerField(default=0)
     is_most_read = models.BooleanField(default=False)
+
+    updated_by_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='updated_questions',
+        limit_choices_to={'role': 'mufti'}
+    )
+    updated_by_manual = models.CharField(max_length=255, blank=True, default='')
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -45,6 +53,13 @@ class Question(models.Model):
 
     def __str__(self):
         return self.title
+
+    @property
+    def updated_by(self):
+        if self.updated_by_user:
+            full = self.updated_by_user.get_full_name()
+            return full if full.strip() else self.updated_by_user.email
+        return self.updated_by_manual or ''
 
 class Answer(models.Model):
     APPROVAL_STATUS = (
@@ -57,6 +72,16 @@ class Answer(models.Model):
     mufti = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='answers')
     content = RichTextField()
     approval_status = models.CharField(max_length=10, choices=APPROVAL_STATUS, default='pending')
+
+    updated_by_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='updated_answers',
+        limit_choices_to={'role': 'mufti'}
+    )
+    updated_by_manual = models.CharField(max_length=255, blank=True, default='')
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     class Meta:
@@ -64,6 +89,13 @@ class Answer(models.Model):
 
     def __str__(self):
         return f"Answer to {self.question.title}"
+
+    @property
+    def updated_by(self):
+        if self.updated_by_user:
+            full = self.updated_by_user.get_full_name()
+            return full if full.strip() else self.updated_by_user.email
+        return self.updated_by_manual or ''
 
 class Bookmark(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bookmarks')

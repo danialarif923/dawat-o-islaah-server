@@ -2,11 +2,8 @@ from quran.models import CustomFont
 
 
 def generate_fonts_css():
-
     css = ""
-
     for font in CustomFont.objects.all():
-
         css += f"""
 @font-face {{
     font-family: "{font.name}";

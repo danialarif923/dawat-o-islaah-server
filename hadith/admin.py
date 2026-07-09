@@ -7,14 +7,12 @@ import re
 
 from django.contrib import admin
 from django import forms
-from ckeditor.widgets import CKEditorWidget
-from .models import HadithDocumentUpload, Hadith, Baab, Book, Chapter
 from django.urls import path
 from django.http import HttpResponse, JsonResponse
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from django.contrib.admin.views.decorators import staff_member_required
-from django.utils.decorators import method_decorator
+from ckeditor.widgets import CKEditorWidget
+from .models import HadithDocumentUpload, Hadith, Baab, Book, Chapter
 
 
 
@@ -120,7 +118,6 @@ class BaabAdmin(admin.ModelAdmin):
 
     list_display = (
         "baab_name_urdu",
-        "baab_name_english",
         "book",
         "get_chapter_display",
         "start_hadith_number",
@@ -146,17 +143,6 @@ class BaabAdmin(admin.ModelAdmin):
         if obj.chapter:
             return f"{obj.chapter.chapter_number}. {obj.chapter.chapter_english}"
         return obj.chapter_english or "-"
-
-    def save_model(self, request, obj, form, change):
-        from hadith.models import Hadith
-        super().save_model(request, obj, form, change)
-        updated = Hadith.objects.filter(
-            book=obj.book,
-            hadith_number__gte=obj.start_hadith_number,
-            hadith_number__lte=obj.end_hadith_number
-        ).exclude(baab=obj).update(baab=obj)
-        if updated:
-            self.message_user(request, f"Linked {updated} hadith(s) to this baab.")
 
 
 # ======================================================
@@ -204,28 +190,21 @@ class HadithAdmin(admin.ModelAdmin):
 
     # GLOBAL HADITH NUMBER DISPLAY
     list_display = (
-        "chapter_hadith_id",
+        "hadith_number",
         "book",
         "chapter_number",
         "chapter_english",
-        "chapter_urdu",
-        "chapter_arabic",
         "get_baab",
-        "status",
-        "detailed_explanation",
     )
 
-    list_display_links = ("chapter_hadith_id",)
+    list_display_links = ("hadith_number",)
 
     search_fields = (
-        "chapter_hadith_id",
         "hadith_number",
         "chapter_english",
         "chapter_urdu",
         "chapter_arabic",
         "reference",
-        "status",
-        "detailed_explanation",
         "baab__baab_name_urdu",
         "baab__baab_name_english",
         "book__name",
@@ -240,7 +219,7 @@ class HadithAdmin(admin.ModelAdmin):
     # use global hadith_number instead of chapter_hadith_id
     ordering = (
         "book__order",
-        "chapter_hadith_id",
+        "hadith_number",
     )
 
     list_per_page = 50
@@ -276,8 +255,6 @@ class HadithAdmin(admin.ModelAdmin):
             "fields": (
                 "reference",
                 "updated_by",
-                "status",
-                "detailed_explanation",
             )
         }),
     )
@@ -288,13 +265,13 @@ class HadithAdmin(admin.ModelAdmin):
             "baab"
         )
 
-    @admin.display(description="Baab Urdu")
+    @admin.display(description="Baab")
     def get_baab(self, obj):
         return obj.baab.baab_name_urdu if obj.baab else "-"
 
-    @admin.display(description="Baab English")
-    def get_baab_english(self, obj):
-        return obj.baab.baab_name_english if obj.baab and obj.baab.baab_name_english else "-"
+    class Media:
+        js = ("js/ckeditor_font_loader.js",)
+
 
 @admin.register(HadithDocumentUpload)
 class HadithDocumentUploadAdmin(admin.ModelAdmin):
@@ -727,4 +704,3 @@ class HadithDocumentUploadAdmin(admin.ModelAdmin):
             obj.result_log = f"Error: {str(e)}"
 
         ModelClass.objects.filter(pk=obj.pk).update(result_log=obj.result_log)
-

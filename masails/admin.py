@@ -30,6 +30,9 @@ class MasailAdmin(admin.ModelAdmin):
 
     actions = ['make_published', 'make_draft']
 
+    class Media:
+        js = ("js/ckeditor_font_loader.js",)
+
     @admin.action(description='Mark selected masails as published')
     def make_published(self, request, queryset):
         queryset.update(status='published')
