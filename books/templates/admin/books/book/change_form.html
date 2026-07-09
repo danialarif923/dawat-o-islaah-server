@@ -1,0 +1,183 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+#upload-progress-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 9999;
+    justify-content: center;
+    align-items: center;
+}
+#upload-progress-overlay.active {
+    display: flex;
+}
+#upload-progress-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 32px 40px;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    max-width: 480px;
+    width: 90%;
+}
+#upload-progress-bar-wrapper {
+    width: 100%;
+    height: 24px;
+    background: #e9ecef;
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 16px 0;
+}
+#upload-progress-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #1E3A5F, #3b82f6);
+    border-radius: 12px;
+    transition: width 0.3s ease;
+}
+#upload-progress-text {
+    font-size: 14px;
+    color: #555;
+    margin: 8px 0 0;
+}
+#upload-progress-percent {
+    font-size: 20px;
+    font-weight: bold;
+    color: #1E3A5F;
+    margin: 4px 0;
+}
+#upload-progress-filename {
+    font-size: 13px;
+    color: #888;
+    margin: 4px 0;
+    word-break: break-all;
+}
+.upload-spinner {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border: 3px solid #e9ecef;
+    border-top: 3px solid #1E3A5F;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 8px;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{{ block.super }}
+
+<div id="upload-progress-overlay">
+    <div id="upload-progress-box">
+        <div class="upload-spinner" id="progress-spinner"></div>
+        <div style="font-size:18px;font-weight:600;color:#1E3A5F;margin-bottom:8px" id="progress-title">Uploading Book...</div>
+        <div id="upload-progress-filename"></div>
+        <div id="upload-progress-percent">0%</div>
+        <div id="upload-progress-bar-wrapper">
+            <div id="upload-progress-bar-fill"></div>
+        </div>
+        <div id="upload-progress-text">Starting upload...</div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var form = document.querySelector('form[enctype="multipart/form-data"]');
+    if (!form) return;
+
+    var overlay = document.getElementById('upload-progress-overlay');
+    var barFill = document.getElementById('upload-progress-bar-fill');
+    var percentText = document.getElementById('upload-progress-percent');
+    var statusText = document.getElementById('upload-progress-text');
+    var filenameEl = document.getElementById('upload-progress-filename');
+    var titleEl = document.getElementById('progress-title');
+    var spinnerEl = document.getElementById('progress-spinner');
+
+    var fileInput = form.querySelector('input[type="file"][name="pdf_file"]');
+
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    form.addEventListener('submit', function(e) {
+        var file = fileInput && fileInput.files[0];
+        if (!file) return;
+
+        e.preventDefault();
+
+        // Check file size (nginx limit is 2048M)
+        if (file.size > 2048 * 1024 * 1024) {
+            alert('File is too large. Maximum file size is 2GB.');
+            return;
+        }
+
+        // Show overlay
+        overlay.classList.add('active');
+        filenameEl.textContent = file.name;
+        percentText.textContent = '0%';
+        barFill.style.width = '0%';
+        statusText.textContent = 'Uploading...';
+        titleEl.textContent = 'Uploading Book...';
+        spinnerEl.style.display = 'inline-block';
+
+        var formData = new FormData(form);
+        var xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) {
+                var pct = Math.round((e.loaded / e.total) * 100);
+                barFill.style.width = pct + '%';
+                percentText.textContent = pct + '%';
+                statusText.textContent = 'Uploading... (' + formatSize(e.loaded) + ' / ' + formatSize(e.total) + ')';
+            }
+        });
+
+        xhr.addEventListener('load', function() {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                var finalUrl = xhr.responseURL;
+                // Check if redirected to the list page (success)
+                var isListPage = finalUrl.indexOf('/change/') === -1 && finalUrl.indexOf('/add/') === -1;
+                if (isListPage) {
+                    titleEl.textContent = 'Book Saved!';
+                    statusText.textContent = 'Processing PDF in background. Redirecting...';
+                    spinnerEl.style.display = 'none';
+                    percentText.textContent = '100%';
+                    barFill.style.width = '100%';
+                    barFill.style.background = 'linear-gradient(90deg, #10b981, #059669)';
+                    setTimeout(function() {
+                        window.location.href = finalUrl;
+                    }, 1500);
+                    return;
+                }
+            }
+            // Error or form validation — replace page with error response
+            document.open();
+            document.write(xhr.responseText);
+            document.close();
+        });
+
+        xhr.addEventListener('error', function() {
+            statusText.textContent = 'Upload failed. Please try again.';
+            percentText.textContent = 'Error';
+            barFill.style.background = '#ef4444';
+            spinnerEl.style.display = 'none';
+        });
+
+        xhr.open('POST', form.action, true);
+        xhr.send(formData);
+    });
+})();
+</script>
+{% endblock %}
